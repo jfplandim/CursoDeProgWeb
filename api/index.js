@@ -81,7 +81,7 @@ async function enviarEmail(emailDestino, nome) {
     await transporter.sendMail({
         from: `"Syntax Cursos" <${process.env.EMAIL_REMETENTE}>`,
         to: emailDestino,
-        subject: 'Matrícula confirmada! 🎉',
+        subject: 'Matrícula confirmada!',
         html: `
             <h2>Olá, ${nome}!</h2>
             <p>Seu pagamento foi confirmado. Bem-vindo ao curso Syntax!</p>
