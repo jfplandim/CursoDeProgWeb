@@ -12,37 +12,54 @@ app.use(express.json());
 const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });
 const paymentClient = new Payment(client);
 
-// Gera o Pix e salva o e-mail/nome no mapa temporário para usar no webhook
-const pagamentosMap = new Map(); // { paymentId: { email, nome } }
-
 app.post('/api/payment', async (req, res) => {
     try {
-        const { nome, email, valor } = req.body;
+        const { nome, email, valor, token, parcelas } = req.body;
+
+        // Validação básica — todos os campos são obrigatórios
+        if (!nome || !email || !valor || !token) {
+            return res.status(400).json({ error: 'Dados incompletos.' });
+        }
 
         const body = {
             transaction_amount: Number(valor),
-            description: 'Curso Syntax - Programação Web',
-            payment_method_id: 'pix',
-            payer: { email, first_name: nome },
+            token:              token,          // card_token gerado pelo SDK no front-end
+            description:        'Curso Syntax - Programação Web',
+            installments:       Number(parcelas) || 1,
+            payment_method_id:  'credit_card',  // SEMPRE cartão — nunca vem do front-end
+            payer: {
+                email,
+                first_name: nome,
+            },
             notification_url: process.env.WEBHOOK_URL,
         };
 
         const resultado = await paymentClient.create({ body });
 
-        // Salva os dados do aluno associados ao ID do pagamento
-        pagamentosMap.set(String(resultado.id), { email, nome });
-
+        // Retorna o status para o front-end decidir o que mostrar
         res.json({
-            qr_code: resultado.point_of_interaction.transaction_data.qr_code,
-            qr_code_base64: resultado.point_of_interaction.transaction_data.qr_code_base64,
+            status:        resultado.status,
+            status_detail: resultado.status_detail,
+            id:            resultado.id,
         });
+
+        // Se aprovado aqui de imediato (comum em testes), já envia os e-mails
+        // Pagamentos reais são confirmados pelo webhook abaixo
+        if (resultado.status === 'approved') {
+            await enviarEmailAluno(email, nome);
+            await enviarEmailEmpresa(email, nome, valor);
+        }
+
     } catch (error) {
-        console.error("Erro ao gerar Pix:", error);
-        res.status(500).json({ error: 'Erro ao processar o pagamento' });
+        console.error("Erro ao processar pagamento:", error);
+        res.status(500).json({ error: 'Erro ao processar o pagamento. Tente novamente.' });
     }
 });
 
-// Webhook — Recebe a confirmação do Mercado Pago
+// ---------------------------------------------------------------
+// Webhook — confirmação assíncrona do Mercado Pago
+// Usado para pagamentos que ficam "em análise" e são aprovados depois
+// ---------------------------------------------------------------
 app.post('/api/webhook', async (req, res) => {
     // Responde 200 IMEDIATAMENTE — o MP exige resposta rápida, senão reenvia
     res.sendStatus(200);
@@ -55,40 +72,66 @@ app.post('/api/webhook', async (req, res) => {
         const info = await paymentClient.get({ id: data.id });
 
         if (info.status === 'approved') {
-            // Tenta pegar os dados do mapa; se não achar (ex: servidor reiniciou),
-            // usa o que o MP retorna direto
-            const aluno = pagamentosMap.get(String(data.id));
-            const emailDestino = aluno?.email ?? info.payer.email;
-            const nomeAluno    = aluno?.nome  ?? info.payer.first_name ?? 'Aluno';
+            const emailDestino = info.payer.email;
+            const nomeAluno    = info.payer.first_name ?? 'Aluno';
+            const valorPago    = info.transaction_amount;
 
-            await enviarEmail(emailDestino, nomeAluno);
-            pagamentosMap.delete(String(data.id)); // limpa da memória após envio
+            await enviarEmailAluno(emailDestino, nomeAluno);
+            await enviarEmailEmpresa(emailDestino, nomeAluno, valorPago);
         }
     } catch (error) {
         console.error("Erro no Webhook:", error);
     }
 });
 
-async function enviarEmail(emailDestino, nome) {
-    const transporter = nodemailer.createTransport({
+// ---------------------------------------------------------------
+// Funções de e-mail
+// ---------------------------------------------------------------
+function criarTransporter() {
+    return nodemailer.createTransport({
         service: 'gmail',
         auth: {
             user: process.env.EMAIL_REMETENTE,
-            pass: process.env.EMAIL_SENHA_APP, // Senha de app do Google, não a senha normal
+            pass: process.env.EMAIL_SENHA_APP, // Senha de app do Google (não a senha normal)
         }
     });
+}
+
+// E-mail de confirmação para o ALUNO
+async function enviarEmailAluno(emailDestino, nome) {
+    const transporter = criarTransporter();
 
     await transporter.sendMail({
-        from: `"Syntax Cursos" <${process.env.EMAIL_REMETENTE}>`,
-        to: emailDestino,
-        subject: 'Matrícula confirmada!',
+        from:    `"Syntax Cursos" <${process.env.EMAIL_REMETENTE}>`,
+        to:      emailDestino,
+        subject: 'Matrícula confirmada! 🎉',
         html: `
             <h2>Olá, ${nome}!</h2>
             <p>Seu pagamento foi confirmado. Bem-vindo ao curso Syntax!</p>
-            <p>Em breve você receberá o link de acesso.</p>
+            <p>Em breve você receberá o link de acesso à plataforma.</p>
+            <p>Qualquer dúvida, responda este e-mail.</p>
         `
     });
-    console.log(`E-mail enviado para: ${emailDestino}`);
+    console.log(`E-mail de confirmação enviado para o aluno: ${emailDestino}`);
+}
+
+// E-mail de notificação para a EMPRESA
+async function enviarEmailEmpresa(emailAluno, nomeAluno, valor) {
+    const transporter = criarTransporter();
+
+    await transporter.sendMail({
+        from:    `"Syntax Cursos" <${process.env.EMAIL_REMETENTE}>`,
+        to:      process.env.EMAIL_EMPRESA,  // defina EMAIL_EMPRESA no seu .env
+        subject: `Nova matrícula confirmada: ${nomeAluno}`,
+        html: `
+            <h2>Nova matrícula!</h2>
+            <p><strong>Aluno:</strong> ${nomeAluno}</p>
+            <p><strong>E-mail:</strong> ${emailAluno}</p>
+            <p><strong>Valor pago:</strong> R$ ${Number(valor).toFixed(2)}</p>
+            <p><strong>Data:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+        `
+    });
+    console.log(`E-mail de notificação enviado para a empresa.`);
 }
 
 module.exports = app;

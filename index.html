@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
     <title>Página Principal - Syntax</title>
     <link rel="stylesheet" href="style.css" />
+    <!-- SDK do Mercado Pago (necessário para gerar card_token com segurança) -->
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
   </head>
   <body>
 
@@ -35,8 +37,6 @@
         </div>
     </section>
 
-    
-
     <main>
       <section class="card_professor" id="professor">
         <img
@@ -44,7 +44,6 @@
           alt="Foto do Professor João Pereira"
           class="imagem_professor"
         />
-        
 
         <div class="info_professor">
           <span class="professor_label">Professor</span>
@@ -67,9 +66,6 @@
         </div>
       </section>
     </main>
-
-
-    
 
     <section class="github" id="repositorios">
       <div class="github_header">
@@ -194,10 +190,7 @@
             <li>Arrays e objetos</li>
             <li>Interação com forEach</li>
           </ul>
-
         </div>
-
-
       </div>
 
       <div class="item">
@@ -291,19 +284,53 @@
                 <div class="input-group">
                     <label for="pagamento">FORMA DE PAGAMENTO</label>
                     <select id="pagamento" name="pagamento">
-                        <option value="cartao" disabled>Cartão (em breve)</option>
-                        <option value="pix">Pix</option>
+                        <option value="" disabled selected>Selecione uma forma de pagamento</option>
+                        <option value="cartao">Cartão de Crédito</option>
+                        <option value="pix" disabled>Pix (em breve)</option>
                         <option value="boleto" disabled>Boleto (em breve)</option>
                     </select>
                 </div>
 
+                <!-- Campos do cartão — aparecem quando Cartão é selecionado -->
+                <div id="campos-cartao" style="display:none;">
+                    <div class="input-group">
+                        <label for="card-number">NÚMERO DO CARTÃO</label>
+                        <input type="text" id="card-number" placeholder="0000 0000 0000 0000" maxlength="19">
+                    </div>
+                    <div class="input-group">
+                        <label for="card-name">NOME NO CARTÃO</label>
+                        <input type="text" id="card-name" placeholder="Como está no cartão">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="input-group">
+                            <label for="card-expiry">VALIDADE</label>
+                            <input type="text" id="card-expiry" placeholder="MM/AA" maxlength="5">
+                        </div>
+                        <div class="input-group">
+                            <label for="card-cvv">CVV</label>
+                            <input type="text" id="card-cvv" placeholder="123" maxlength="4">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="card-installments">PARCELAS</label>
+                        <select id="card-installments">
+                            <option value="1">1x de R$ 97,90 (sem juros)</option>
+                        </select>
+                    </div>
+                </div>
+
                 <button type="submit" class="botao-enviar-cyan">Confirmar Inscrição</button>
             </form>
-            <div id="area-pix" style="display:none; margin-top: 20px;">
-                  <p>Escaneie o QR Code ou copie o código abaixo:</p>
-                  <img id="qr-code-img" alt="QR Code Pix" style="width: 200px;"/>
-                  <br>
-                  <textarea id="copia-cola" rows="4" style="width:100%; margin-top:10px;" readonly></textarea>
+
+            <!-- Área de sucesso após pagamento aprovado -->
+            <div id="area-sucesso" style="display:none; margin-top: 20px; padding: 20px; background: rgba(166,227,161,0.1); border: 1px solid rgba(166,227,161,0.3); border-radius: 8px; text-align:center;">
+                <p style="color: var(--green); font-size: 1.1rem; font-weight: 600;">✅ Pagamento aprovado!</p>
+                <p style="color: var(--subtext0);">Confira seu e-mail para os próximos passos.</p>
+            </div>
+
+            <!-- Área de erro no cartão -->
+            <div id="area-erro" style="display:none; margin-top: 20px; padding: 16px; background: rgba(243,139,168,0.1); border: 1px solid rgba(243,139,168,0.3); border-radius: 8px;">
+                <p id="mensagem-erro" style="color: var(--red); margin: 0; font-size: 0.9rem;"></p>
             </div>
         </div>
     </section>
@@ -354,4 +381,3 @@
     <script src="script.js"></script>
   </body>
 </html>
-

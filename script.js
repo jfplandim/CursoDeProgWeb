@@ -1,10 +1,8 @@
-const item=document.querySelectorAll(".corpo")
+const item = document.querySelectorAll(".corpo")
 
-
-item.forEach( itens => {
-  itens.addEventListener("click", () =>{
-    const elemento= itens.parentElement
-
+item.forEach(itens => {
+  itens.addEventListener("click", () => {
+    const elemento = itens.parentElement
     elemento.classList.toggle("active")
   })
 })
@@ -14,7 +12,7 @@ const botaoHero = document.querySelector('.titulo_botao');
 const secaoComercial = document.querySelector('.secao-comercial');
 
 function mostrarMatricula(event) {
-  event.preventDefault(); 
+  event.preventDefault();
   secaoComercial.classList.add('visivel');
   secaoComercial.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -22,7 +20,135 @@ function mostrarMatricula(event) {
 if (botaoNav) botaoNav.addEventListener('click', mostrarMatricula);
 if (botaoHero) botaoHero.addEventListener('click', mostrarMatricula);
 
-//cores dos botoes
+// ---------------------------------------------------------------
+// Inicializa o SDK do Mercado Pago com sua Public Key
+// Substitua pela sua chave pública real (começa com APP_USR- ou TEST-)
+// ---------------------------------------------------------------
+const mp = new MercadoPago('APP_USR-d5868c63-e266-4443-a22b-79ee73172ada', { locale: 'pt-BR' });
+
+// Mostrar/ocultar campos do cartão conforme seleção
+document.getElementById('pagamento').addEventListener('change', function () {
+  const camposCartao = document.getElementById('campos-cartao');
+  camposCartao.style.display = this.value === 'cartao' ? 'block' : 'none';
+});
+
+// Máscara simples para número do cartão (grupos de 4)
+document.getElementById('card-number').addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 16);
+  this.value = v.replace(/(.{4})/g, '$1 ').trim();
+});
+
+// Máscara para validade MM/AA
+document.getElementById('card-expiry').addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 4);
+  if (v.length >= 3) v = v.slice(0, 2) + '/' + v.slice(2);
+  this.value = v;
+});
+
+// ---------------------------------------------------------------
+// Submit do formulário
+// ---------------------------------------------------------------
+document.getElementById("form-contato").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const pagamento = document.getElementById("pagamento").value;
+
+  if (!pagamento || pagamento !== "cartao") {
+    mostrarErro("Por enquanto apenas Cartão de Crédito está disponível.");
+    return;
+  }
+
+  const nome  = document.getElementById("nome").value;
+  const email = document.getElementById("email").value;
+
+  // Dados do cartão
+  const numeroRaw  = document.getElementById("card-number").value.replace(/\s/g, '');
+  const nomeCartao = document.getElementById("card-name").value;
+  const expiry     = document.getElementById("card-expiry").value;
+  const cvv        = document.getElementById("card-cvv").value;
+  const parcelas   = document.getElementById("card-installments").value;
+
+  // Validações básicas
+  if (numeroRaw.length < 13) { mostrarErro("Número do cartão inválido."); return; }
+  if (!nomeCartao.trim())    { mostrarErro("Informe o nome no cartão."); return; }
+  if (!expiry.includes('/')) { mostrarErro("Validade inválida. Use MM/AA."); return; }
+  if (cvv.length < 3)        { mostrarErro("CVV inválido."); return; }
+
+  const [mesStr, anoStr] = expiry.split('/');
+  const expirationMonth  = mesStr;
+  const expirationYear   = '20' + anoStr;
+
+  const botao = e.target.querySelector("button[type=submit]");
+  botao.disabled = true;
+  botao.textContent = "Processando...";
+  ocultarErro();
+
+  try {
+    // 1. Gera o card_token pelo SDK do MP (os dados do cartão nunca passam pelo seu servidor)
+    const cardToken = await mp.createCardToken({
+      cardNumber:      numeroRaw,
+      cardholderName:  nomeCartao,
+      cardExpirationMonth: expirationMonth,
+      cardExpirationYear:  expirationYear,
+      securityCode:    cvv,
+    });
+
+    if (!cardToken || !cardToken.id) {
+      throw new Error("Não foi possível gerar o token do cartão. Verifique os dados.");
+    }
+
+    // 2. Envia o token para o backend processar o pagamento
+    const resposta = await fetch("/api/payment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome,
+        email,
+        valor:      97.90,
+        token:      cardToken.id,
+        parcelas:   Number(parcelas),
+        metodoPagamento: 'credit_card',
+      }),
+    });
+
+    const dados = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(dados.error || "Erro ao processar pagamento.");
+    }
+
+    // 3. Feedback para o usuário
+    if (dados.status === 'approved') {
+      document.getElementById("area-sucesso").style.display = "block";
+      document.getElementById("form-contato").style.display = "none";
+    } else if (dados.status === 'in_process' || dados.status === 'pending') {
+      mostrarErro("Pagamento em análise. Você receberá uma confirmação por e-mail em breve.");
+    } else {
+      mostrarErro("Pagamento recusado. Verifique os dados ou tente outro cartão.");
+    }
+
+  } catch (erro) {
+    console.error("Erro no pagamento:", erro);
+    mostrarErro(erro.message || "Erro inesperado. Tente novamente.");
+  } finally {
+    botao.disabled = false;
+    botao.textContent = "Confirmar Inscrição";
+  }
+});
+
+function mostrarErro(msg) {
+  const area = document.getElementById("area-erro");
+  document.getElementById("mensagem-erro").textContent = msg;
+  area.style.display = "block";
+}
+
+function ocultarErro() {
+  document.getElementById("area-erro").style.display = "none";
+}
+
+// ---------------------------------------------------------------
+// Cores dos botões de filtro GitHub
+// ---------------------------------------------------------------
 const cores_filtros = {
   JavaScript: '#f7df1e',
   TypeScript: '#3178c6',
@@ -37,11 +163,8 @@ const cores_filtros = {
 }
 
 const icone_repo = `<svg class="gh-repos__card-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/></svg>`
-
 const icone_estrela = `<svg class="gh-repos__stat-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>`
-
 const icone_fork = `<svg class="gh-repos__stat-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/></svg>`
-
 const icone_link = `<svg class="gh-repos__card-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3h7m0 0v7m0-7L6 10"/></svg>`
 
 let todosOsRepos = []
@@ -79,40 +202,28 @@ function renderizarCards(lista) {
   document.getElementById('github_grid').innerHTML = htmlCompleto
 }
 
-//api do github
 async function buscarRepositorios() {
-try {
+  try {
     const url = 'https://api.github.com/users/Surufel/repos'
     const resposta = await fetch(url)
 
-    if (!resposta.ok) {
-      throw new Error(`Erro da API: ${resposta.status} ${resposta.statusText}`)
-    }
+    if (!resposta.ok) throw new Error(`Erro da API: ${resposta.status}`)
 
     const repositorios = await resposta.json()
-  
-    //qtd total de repo
-    const quantidade = repositorios.length
-    document.getElementById('github_repo-count').textContent = quantidade
-  
-    //qtd total de estrelas
+
+    document.getElementById('github_repo-count').textContent = repositorios.length
+
     let totalEstrelas = 0
-    repositorios.forEach(repo => {
-      totalEstrelas += repo.stargazers_count
-    })
+    repositorios.forEach(repo => { totalEstrelas += repo.stargazers_count })
     document.getElementById('github_stars-count').textContent = totalEstrelas
-  
-    //qtd de linguagens
+
     let linguagensUnicas = []
     repositorios.forEach(function(projeto) {
-      let linguagemDoProjeto = projeto.language
-      if (linguagemDoProjeto != null && !linguagensUnicas.includes(linguagemDoProjeto)) {
-        linguagensUnicas.push(linguagemDoProjeto)
-      }
+      let lang = projeto.language
+      if (lang != null && !linguagensUnicas.includes(lang)) linguagensUnicas.push(lang)
     })
     document.getElementById('github_language-count').textContent = linguagensUnicas.length
-  
-    // salva os repos no formato que o projeto usa
+
     todosOsRepos = repositorios.map(function(projeto) {
       return {
         name:     projeto.name,
@@ -124,17 +235,16 @@ try {
         url:      projeto.html_url,
       }
     })
-  
+
     renderizarCards(todosOsRepos)
 
-} catch (erro) {
-  console.error('Falha ao buscar repositórios:', erro)
-  document.getElementById('github_grid').innerHTML = `
-  <p class="gh-repos__error">Não foi possível carregar os repositórios. Tente novamente mais tarde.</p>`
-}
+  } catch (erro) {
+    console.error('Falha ao buscar repositórios:', erro)
+    document.getElementById('github_grid').innerHTML =
+      `<p class="gh-repos__error">Não foi possível carregar os repositórios. Tente novamente mais tarde.</p>`
+  }
 }
 
-// listener dos filtros
 document.getElementById('github_filter-bar').addEventListener('click', function(e) {
   const btn = e.target.closest('.gh-repos__filter-btn')
   if (!btn) return
@@ -151,7 +261,7 @@ document.getElementById('github_filter-bar').addEventListener('click', function(
 
 buscarRepositorios()
 
-//adicionando botoes para scoll
+// Scroll suave pelos botões de navegação
 document.querySelectorAll('[data-target]').forEach(link => {
   link.addEventListener('click', () => {
     const id = link.getAttribute('data-target')
@@ -159,39 +269,8 @@ document.querySelectorAll('[data-target]').forEach(link => {
   })
 })
 
-//evita a navbar fixa de sobrepor conteúdo da seção
+// Evita a navbar fixa de sobrepor conteúdo da seção
 const alturaNav = document.querySelector('header').offsetHeight
-
 document.querySelectorAll('section').forEach(section => {
   section.style.scrollMarginTop = (alturaNav + 40) + 'px'
 })
-
-
-
-
-/*
-<------------------------------------------------------------------->
-        Conexão ao Servidor para realização de pagamentos
-*/
-
-document.getElementById("form-contato").addEventListener("submit", async (e) => {
-  e.preventDefault(); 
-
-  const nome = document.getElementById("nome").value; // Pega nome
-  const email = document.getElementById("email").value; // Pega e-mail
-
-  const resposta = await fetch("/api/payment", { // POST
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nome, email, valor: 97.90 }), // Para tirar a dúvida, o MercadoPago vê valor como float, o Strippe só aceita em centavos.
-  });
-
-  const dados = await resposta.json(); // Espera a resposta
-
-  document.getElementById("qr-code-img").src =
-    "data:image/png;base64," + dados.qr_code_base64;
-
-  document.getElementById("copia-cola").textContent = dados.qr_code;
-
-  document.getElementById("area-pix").style.display = "block";
-});
