@@ -26,7 +26,8 @@ app.post('/api/payment', async (req, res) => {
             token:              token,          // card_token gerado pelo SDK no front-end
             description:        'Curso Syntax - Programação Web',
             installments:       Number(parcelas) || 1,
-            payment_method_id:  'credit_card',  // SEMPRE cartão — nunca vem do front-end
+            paymentMethodId: paymentMethodId,
+            issuerId:        issuerId,
             payer: {
                 email,
                 first_name: nome,

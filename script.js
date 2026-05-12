@@ -21,8 +21,7 @@ if (botaoNav) botaoNav.addEventListener('click', mostrarMatricula);
 if (botaoHero) botaoHero.addEventListener('click', mostrarMatricula);
 
 // ---------------------------------------------------------------
-// Inicializa o SDK do Mercado Pago com sua Public Key
-// Substitua pela sua chave pública real (começa com APP_USR- ou TEST-)
+// Inicializa o SDK do Mercado Pago
 // ---------------------------------------------------------------
 const mp = new MercadoPago('TEST-86368cc6-0a21-431a-a8aa-d3d276d6d5c7', { locale: 'pt-BR' });
 
@@ -32,12 +31,6 @@ document.getElementById('pagamento').addEventListener('change', function () {
   camposCartao.style.display = this.value === 'cartao' ? 'block' : 'none';
 });
 
-// Máscara simples para número do cartão (grupos de 4)
-document.getElementById('card-number').addEventListener('input', function () {
-  let v = this.value.replace(/\D/g, '').slice(0, 16);
-  this.value = v.replace(/(.{4})/g, '$1 ').trim();
-});
-
 // Máscara para validade MM/AA
 document.getElementById('card-expiry').addEventListener('input', function () {
   let v = this.value.replace(/\D/g, '').slice(0, 4);
@@ -45,17 +38,26 @@ document.getElementById('card-expiry').addEventListener('input', function () {
   this.value = v;
 });
 
+// ---------------------------------------------------------------
+// Listener único do card-number: máscara + detecção de bandeira
+// ---------------------------------------------------------------
 let paymentMethodId = '';
 let issuerId = '';
 
 document.getElementById('card-number').addEventListener('input', async function () {
+  // Máscara grupos de 4
+  let v = this.value.replace(/\D/g, '').slice(0, 16);
+  this.value = v.replace(/(.{4})/g, '$1 ').trim();
+
+  // Detecta bandeira ao completar 6 dígitos
   const bin = this.value.replace(/\s/g, '').slice(0, 6);
   if (bin.length === 6) {
     try {
       const metodos = await mp.getPaymentMethods({ bin });
       if (metodos && metodos.results && metodos.results.length > 0) {
         paymentMethodId = metodos.results[0].id;
-        issuerId        = metodos.results[0].issuer?.id || '';
+        issuerId        = String(metodos.results[0].issuer?.id || '');
+        console.log('Bandeira detectada:', paymentMethodId, 'Issuer:', issuerId);
       }
     } catch (err) {
       console.warn('Não foi possível detectar a bandeira:', err);
@@ -79,18 +81,17 @@ document.getElementById("form-contato").addEventListener("submit", async (e) => 
   const nome  = document.getElementById("nome").value;
   const email = document.getElementById("email").value;
 
-  // Dados do cartão
   const numeroRaw  = document.getElementById("card-number").value.replace(/\s/g, '');
   const nomeCartao = document.getElementById("card-name").value;
   const expiry     = document.getElementById("card-expiry").value;
   const cvv        = document.getElementById("card-cvv").value;
   const parcelas   = document.getElementById("card-installments").value;
 
-  // Validações básicas
   if (numeroRaw.length < 13) { mostrarErro("Número do cartão inválido."); return; }
   if (!nomeCartao.trim())    { mostrarErro("Informe o nome no cartão."); return; }
   if (!expiry.includes('/')) { mostrarErro("Validade inválida. Use MM/AA."); return; }
   if (cvv.length < 3)        { mostrarErro("CVV inválido."); return; }
+  if (!paymentMethodId)      { mostrarErro("Cartão não reconhecido. Verifique o número."); return; }
 
   const [mesStr, anoStr] = expiry.split('/');
   const expirationMonth  = mesStr;
@@ -102,30 +103,29 @@ document.getElementById("form-contato").addEventListener("submit", async (e) => 
   ocultarErro();
 
   try {
-    // 1. Gera o card_token pelo SDK do MP (os dados do cartão nunca passam pelo seu servidor)
     const cardToken = await mp.createCardToken({
-      cardNumber:      numeroRaw,
-      cardholderName:  nomeCartao,
+      cardNumber:          numeroRaw,
+      cardholderName:      nomeCartao,
       cardExpirationMonth: expirationMonth,
       cardExpirationYear:  expirationYear,
-      securityCode:    cvv,
+      securityCode:        cvv,
     });
 
     if (!cardToken || !cardToken.id) {
       throw new Error("Não foi possível gerar o token do cartão. Verifique os dados.");
     }
 
-    // 2. Envia o token para o backend processar o pagamento
     const resposta = await fetch("/api/payment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         nome,
         email,
-        valor:      97.90,
-        token:      cardToken.id,
-        parcelas:   Number(parcelas),
-        metodoPagamento: 'credit_card',
+        valor:           97.90,
+        token:           cardToken.id,
+        parcelas:        Number(parcelas),
+        paymentMethodId: paymentMethodId,
+        issuerId:        issuerId,
       }),
     });
 
@@ -135,7 +135,6 @@ document.getElementById("form-contato").addEventListener("submit", async (e) => 
       throw new Error(dados.error || "Erro ao processar pagamento.");
     }
 
-    // 3. Feedback para o usuário
     if (dados.status === 'approved') {
       document.getElementById("area-sucesso").style.display = "block";
       document.getElementById("form-contato").style.display = "none";
@@ -224,9 +223,7 @@ async function buscarRepositorios() {
   try {
     const url = 'https://cursodeprogwebbackend.onrender.com/api/github'
     const resposta = await fetch(url)
-
     if (!resposta.ok) throw new Error(`Erro da API: ${resposta.status}`)
-
     const repositorios = await resposta.json()
 
     document.getElementById('github_repo-count').textContent = repositorios.length
@@ -266,12 +263,10 @@ async function buscarRepositorios() {
 document.getElementById('github_filter-bar').addEventListener('click', function(e) {
   const btn = e.target.closest('.gh-repos__filter-btn')
   if (!btn) return
-
   document.querySelectorAll('.gh-repos__filter-btn').forEach(b =>
     b.classList.remove('gh-repos__filter-btn--active')
   )
   btn.classList.add('gh-repos__filter-btn--active')
-
   const lang = btn.dataset.lang
   const filtrados = lang === 'all' ? todosOsRepos : todosOsRepos.filter(r => r.lang === lang)
   renderizarCards(filtrados)
@@ -279,7 +274,6 @@ document.getElementById('github_filter-bar').addEventListener('click', function(
 
 buscarRepositorios()
 
-// Scroll suave pelos botões de navegação
 document.querySelectorAll('[data-target]').forEach(link => {
   link.addEventListener('click', () => {
     const id = link.getAttribute('data-target')
@@ -287,49 +281,47 @@ document.querySelectorAll('[data-target]').forEach(link => {
   })
 })
 
-// Evita a navbar fixa de sobrepor conteúdo da seção
 const alturaNav = document.querySelector('header').offsetHeight
 document.querySelectorAll('section').forEach(section => {
   section.style.scrollMarginTop = (alturaNav + 40) + 'px'
 })
 
-
+// ---------------------------------------------------------------
+// Formulário do footer
+// ---------------------------------------------------------------
 const formularioContatoFooter = document.querySelector('.footer-form')
 const popupSucessoFooter = document.getElementById('popup-sucesso')
 
-if(formularioContatoFooter && popupSucessoFooter){
+if (formularioContatoFooter && popupSucessoFooter) {
   formularioContatoFooter.addEventListener('submit', async (e) => {
     e.preventDefault()
-
     const botaoEnviar = formularioContatoFooter.querySelector('.footer-btn')
     const textoOriginal = botaoEnviar.innerText
-    botaoEnviar.innerText= "Enviando"
-    botaoEnviar.disabled=true
-    const formData=new FormData(formularioContatoFooter)
-    try{
+    botaoEnviar.innerText = "Enviando"
+    botaoEnviar.disabled = true
+    const formData = new FormData(formularioContatoFooter)
+    try {
       const responde = await fetch(formularioContatoFooter.action, {
-        method:'post',
-        body:formData,
-        headers:{'Accept': 'application/json'}
+        method: 'post',
+        body: formData,
+        headers: { 'Accept': 'application/json' }
       })
-      if(responde.ok){
+      if (responde.ok) {
         popupSucessoFooter.classList.remove('hidden')
         formularioContatoFooter.reset()
-      } else{
+      } else {
         alert("Erro ao enviar.")
       }
-    } catch(error){
+    } catch (error) {
       alert("Erro de conexão. Verifique a internet.")
-    }   finally{
-      botaoEnviar.innerText=textoOriginal
-      botaoEnviar.disabled=false
+    } finally {
+      botaoEnviar.innerText = textoOriginal
+      botaoEnviar.disabled = false
     }
   })
 }
 
-function fecharPopup(){
+function fecharPopup() {
   const popup = document.getElementById('popup-sucesso')
-  if(popup){
-    popup.classList.add('hidden')
-  }
+  if (popup) popup.classList.add('hidden')
 }
