@@ -15,19 +15,18 @@ const paymentClient = new Payment(client);
 app.post('/api/payment', async (req, res) => {
     try {
         const { nome, email, valor, token, parcelas, paymentMethodId, issuerId } = req.body;
-        console.log('Dados recebidos:', { token, paymentMethodId, issuerId });
-        // Validação básica — todos os campos são obrigatórios
-        if (!nome || !email || !valor || !token) {
+
+        if (!nome || !email || !valor || !token || !paymentMethodId) {
             return res.status(400).json({ error: 'Dados incompletos.' });
         }
 
         const body = {
             transaction_amount: Number(valor),
-            token:              token,          // card_token gerado pelo SDK no front-end
+            token:              token,
             description:        'Curso Syntax - Programação Web',
             installments:       Number(parcelas) || 1,
-            paymentMethodId: paymentMethodId,
-            issuerId:        issuerId,
+            payment_method_id:  paymentMethodId,
+            issuer_id:          issuerId ? Number(issuerId) : undefined,
             payer: {
                 email,
                 first_name: nome,
@@ -37,15 +36,12 @@ app.post('/api/payment', async (req, res) => {
 
         const resultado = await paymentClient.create({ body });
 
-        // Retorna o status para o front-end decidir o que mostrar
         res.json({
             status:        resultado.status,
             status_detail: resultado.status_detail,
             id:            resultado.id,
         });
 
-        // Se aprovado aqui de imediato (comum em testes), já envia os e-mails
-        // Pagamentos reais são confirmados pelo webhook abaixo
         if (resultado.status === 'approved') {
             await enviarEmailAluno(email, nome);
             await enviarEmailEmpresa(email, nome, valor);
@@ -57,17 +53,11 @@ app.post('/api/payment', async (req, res) => {
     }
 });
 
-// ---------------------------------------------------------------
-// Webhook — confirmação assíncrona do Mercado Pago
-// Usado para pagamentos que ficam "em análise" e são aprovados depois
-// ---------------------------------------------------------------
 app.post('/api/webhook', async (req, res) => {
-    // Responde 200 IMEDIATAMENTE — o MP exige resposta rápida, senão reenvia
     res.sendStatus(200);
 
     try {
         const { type, data } = req.body;
-
         if (type !== 'payment' || !data?.id) return;
 
         const info = await paymentClient.get({ id: data.id });
@@ -85,23 +75,18 @@ app.post('/api/webhook', async (req, res) => {
     }
 });
 
-// ---------------------------------------------------------------
-// Funções de e-mail
-// ---------------------------------------------------------------
 function criarTransporter() {
     return nodemailer.createTransport({
         service: 'gmail',
         auth: {
             user: process.env.EMAIL_REMETENTE,
-            pass: process.env.EMAIL_SENHA_APP, // Senha de app do Google (não a senha normal)
+            pass: process.env.EMAIL_SENHA_APP,
         }
     });
 }
 
-// E-mail de confirmação para o ALUNO
 async function enviarEmailAluno(emailDestino, nome) {
     const transporter = criarTransporter();
-
     await transporter.sendMail({
         from:    `"Syntax Cursos" <${process.env.EMAIL_REMETENTE}>`,
         to:      emailDestino,
@@ -113,16 +98,14 @@ async function enviarEmailAluno(emailDestino, nome) {
             <p>Qualquer dúvida, responda este e-mail.</p>
         `
     });
-    console.log(`E-mail de confirmação enviado para o aluno: ${emailDestino}`);
+    console.log(`E-mail enviado para o aluno: ${emailDestino}`);
 }
 
-// E-mail de notificação para a EMPRESA
 async function enviarEmailEmpresa(emailAluno, nomeAluno, valor) {
     const transporter = criarTransporter();
-
     await transporter.sendMail({
         from:    `"Syntax Cursos" <${process.env.EMAIL_REMETENTE}>`,
-        to:      process.env.EMAIL_EMPRESA,  // defina EMAIL_EMPRESA no seu .env
+        to:      process.env.EMAIL_EMPRESA,
         subject: `Nova matrícula confirmada: ${nomeAluno}`,
         html: `
             <h2>Nova matrícula!</h2>
@@ -132,7 +115,7 @@ async function enviarEmailEmpresa(emailAluno, nomeAluno, valor) {
             <p><strong>Data:</strong> ${new Date().toLocaleString('pt-BR')}</p>
         `
     });
-    console.log(`E-mail de notificação enviado para a empresa.`);
+    console.log(`E-mail enviado para a empresa.`);
 }
 
 module.exports = app;
