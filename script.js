@@ -289,6 +289,9 @@ document.querySelectorAll('section').forEach(section => {
 // ---------------------------------------------------------------
 // Formulário do footer
 // ---------------------------------------------------------------
+
+const BACKEND_URL = 'https://cursodeprogwebbackend.onrender.com'
+
 const formularioContatoFooter = document.querySelector('.footer-form')
 const popupSucessoFooter = document.getElementById('popup-sucesso')
 
@@ -300,11 +303,18 @@ if (formularioContatoFooter && popupSucessoFooter) {
     botaoEnviar.innerText = "Enviando"
     botaoEnviar.disabled = true
     const formData = new FormData(formularioContatoFooter)
+
+    const dados = {
+      nome: formData.get('nome'),
+      email: formData.get('email'),
+      mensagem: formData.get('mensagem')
+    }
+
     try {
-      const responde = await fetch(formularioContatoFooter.action, {
-        method: 'post',
-        body: formData,
-        headers: { 'Accept': 'application/json' }
+      const resposta = await fetch(`${BACKEND_URL}/api/contato`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados)
       })
       if (responde.ok) {
         popupSucessoFooter.classList.remove('hidden')
