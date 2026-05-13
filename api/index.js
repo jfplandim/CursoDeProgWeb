@@ -36,16 +36,23 @@ app.post('/api/payment', async (req, res) => {
 
         const resultado = await paymentClient.create({ body });
 
+        if (resultado.status === 'approved') {
+            try {
+                await Promise.all([
+                    enviarEmailAluno(email, nome),
+                    enviarEmailEmpresa(email, nome, valor)
+                ]);
+                console.log('E-mails enviados com sucesso.');
+            } catch (emailErro) {
+                console.error('Erro ao enviar e-mails:', emailErro.message);
+            }
+        }
+
         res.json({
             status:        resultado.status,
             status_detail: resultado.status_detail,
             id:            resultado.id,
         });
-
-        if (resultado.status === 'approved') {
-            enviarEmailAluno(email, nome).catch(e => console.error('Erro email aluno:', e));
-            enviarEmailEmpresa(email, nome, valor).catch(e => console.error('Erro email empresa:', e));
-        }
 
     } catch (error) {
         console.error("Erro ao processar pagamento:", error);
