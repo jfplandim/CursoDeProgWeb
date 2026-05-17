@@ -12,7 +12,7 @@
 **Landing page e plataforma de vendas para um curso completo de desenvolvimento web frontend.**  
 Do zero ao JavaScript — com integração de pagamentos, portfólio dinâmico e ementa interativa.
 
-[🌐 Acessar o Site](https://jfplandim.github.io/CursoDeProgWeb) · [📁 Repositório Backend](https://github.com/jfplandim/CursoDeProgWeb)
+[🌐 Acessar o Site](https://jfplandim.github.io/CursoDeProgWeb) · [📁 Repositório Backend](https://github.com/jfplandim/CursoDeProgWebBackend)
 
 </div>
 
